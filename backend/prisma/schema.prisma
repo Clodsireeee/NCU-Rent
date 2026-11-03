@@ -1,0 +1,124 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ListingType {
+  RENT
+  SUBLET
+  SHORT_TERM
+}
+
+enum Role {
+  STUDENT
+  ADMIN
+}
+
+model User {
+  id         Int        @id @default(autoincrement())
+  googleId   String     @unique
+  email      String     @unique
+  name       String?
+  role       Role       @default(STUDENT)
+  createdAt  DateTime   @default(now())
+  properties Property[]
+  reviews    Review[]
+  eateries   Eatery[]
+  eateryReviews EateryReview[]
+}
+
+model Property {
+  id               Int             @id @default(autoincrement())
+  title            String
+  address          String
+  lat              Float
+  lng              Float
+  price            Int
+  description      String?
+  rentSubsidy      Boolean         @default(false) // 可申請租屋補貼
+  hasTrashService  Boolean         @default(false) // 垃圾代收
+  hasIndoorParking Boolean         @default(false) // 室內機車位
+  listingType      ListingType     @default(RENT)
+  availableFrom    DateTime?
+  availableTo      DateTime?
+  ownerId          Int
+  owner            User            @relation(fields: [ownerId], references: [id])
+  images           PropertyImage[]
+  reviews          Review[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([lat, lng])
+  @@index([price])
+}
+
+model PropertyImage {
+  id         Int      @id @default(autoincrement())
+  url        String
+  publicId   String // Cloudinary public_id,刪除時使用
+  propertyId Int
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@index([propertyId])
+}
+
+model Review {
+  id         Int      @id @default(autoincrement())
+  rating     Int // 1~5
+  content    String
+  userId     Int
+  propertyId Int
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // 防重複評價:同一使用者對同一房源只能評一次
+  @@unique([userId, propertyId])
+  @@index([propertyId])
+}
+
+model GarbageStop {
+  id          Int    @id @default(autoincrement())
+  name        String
+  lat         Float
+  lng         Float
+  days        Int[] // 0=週日 ... 6=週六
+  arrivalTime String // "18:30"
+  note        String?
+}
+
+model Eatery {
+  id          Int            @id @default(autoincrement())
+  name        String
+  address     String?
+  lat         Float
+  lng         Float
+  category    String
+  priceRange  Int? // 平均每人花費
+  description String?
+  ownerId     Int
+  owner       User           @relation(fields: [ownerId], references: [id])
+  reviews     EateryReview[]
+  createdAt   DateTime       @default(now())
+
+  @@index([lat, lng])
+}
+
+model EateryReview {
+  id        Int      @id @default(autoincrement())
+  rating    Int
+  content   String
+  userId    Int
+  eateryId  Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eatery    Eatery   @relation(fields: [eateryId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, eateryId])
+}

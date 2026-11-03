@@ -1,0 +1,19 @@
+[
+  {
+    "title": "【範例】後門套房",
+    "address": "桃園市中壢區中大路(請改成真實地址)",
+    "lat": 24.9672, "lng": 121.1905, "price": 7500,
+    "description": "範例資料,請替換成真實房源",
+    "rentSubsidy": true, "hasTrashService": true, "hasIndoorParking": false,
+    "reviews": [
+      { "rating": 4, "content": "【網路評價整理】隔音普通,房東好溝通,夏天頂樓偏熱。" }
+    ]
+  },
+  {
+    "title": "【範例】宵夜街雅房",
+    "address": "桃園市中壢區(請改成真實地址)",
+    "lat": 24.9655, "lng": 121.1888, "price": 5500,
+    "rentSubsidy": false, "hasTrashService": false, "hasIndoorParking": true,
+    "reviews": []
+  }
+]
