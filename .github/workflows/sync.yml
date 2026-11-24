@@ -1,0 +1,47 @@
+# 定時同步:校園消息每天、房源與美食每週。
+# 設定方式:GitHub repo → Settings → Secrets and variables → Actions,新增
+#   DATABASE_URL(Render 資料庫的 External URL)、AI_API_KEY、GOOGLE_MAPS_API_KEY、CRAWLER_CONTACT
+name: sync-data
+
+on:
+  schedule:
+    - cron: '17 22 * * *'   # 每天 06:17(台灣時間)
+    - cron: '43 19 * * 0'   # 每週一 03:43(台灣時間)
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'news / houses / eateries / clubs / all'
+        default: 'news'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      AI_API_KEY: ${{ secrets.AI_API_KEY }}
+      GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+      CRAWLER_CONTACT: ${{ secrets.CRAWLER_CONTACT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npx prisma migrate deploy
+      - name: 校園消息(每天)
+        if: github.event.schedule == '17 22 * * *' || inputs.job == 'news' || inputs.job == 'all'
+        run: npm run sync:news
+      - name: 社團名錄
+        if: github.event.schedule == '43 19 * * 0' || inputs.job == 'clubs' || inputs.job == 'all'
+        run: npm run sync:clubs
+      - name: 房源(每週)
+        if: github.event.schedule == '43 19 * * 0' || inputs.job == 'houses' || inputs.job == 'all'
+        run: npm run sync:houses
+      - name: 美食(每週,Google 座標最多保存 30 天)
+        if: (github.event.schedule == '43 19 * * 0' || inputs.job == 'eateries' || inputs.job == 'all') && env.GOOGLE_MAPS_API_KEY != ''
+        run: npm run sync:eateries

@@ -5,7 +5,7 @@ import { asyncHandler, HttpError, boolStr } from '../lib/http.js';
 import { optionalAuth, requireAuth } from '../middleware/auth.js';
 import { upload, MAX_IMAGES } from '../middleware/upload.js';
 import { uploadBuffer, deleteImages } from '../lib/cloudinary.js';
-import { anonymizeReview } from './reviews.js';
+import { anonymizeReview, visibleReviewsWhere } from './reviews.js';
 
 const router = Router();
 
@@ -36,8 +36,14 @@ const listQuery = z.object({
   trash: boolStr.optional(),
   parking: boolStr.optional(),
   type: z.enum(['RENT', 'SUBLET', 'SHORT_TERM']).optional(),
-  limit: z.coerce.number().int().min(1).max(500).default(200),
+  fireSafe: boolStr.optional(), // 只看學校消防合格
+  source: z.enum(['USER', 'NCU_HOUSE', 'NEARBY_SCHOOL', 'FIRE_LIST']).optional(),
+  vacantOnly: boolStr.optional(), // 隱藏已滿租
+  limit: z.coerce.number().int().min(1).max(500).default(300),
 });
+
+// 外部來源超過這麼多天沒同步到(可能已下架)就不顯示
+const STALE_DAYS = Number(process.env.EXTERNAL_STALE_DAYS) || 45;
 
 /* ---------- 工具 ---------- */
 const parseId = (v) => {
@@ -58,7 +64,11 @@ router.get(
   '/',
   asyncHandler(async (req, res) => {
     const q = listQuery.parse(req.query);
-    const where = {};
+    const cutoff = new Date(Date.now() - STALE_DAYS * 864e5);
+    const where = {
+      hidden: false,
+      NOT: { source: { in: ['NCU_HOUSE', 'NEARBY_SCHOOL'] }, lastSyncedAt: { lt: cutoff } },
+    };
 
     if (q.bbox) {
       const [minLng, minLat, maxLng, maxLat] = q.bbox.split(',').map(Number);
@@ -66,8 +76,12 @@ router.get(
       where.lng = { gte: minLng, lte: maxLng };
     }
     if (q.minPrice !== undefined || q.maxPrice !== undefined) {
-      where.price = { gte: q.minPrice, lte: q.maxPrice };
+      where.price = { gte: q.minPrice, lte: q.maxPrice }; // 租金未知(null)的房源不會出現在價格篩選結果
     }
+    if (q.fireSafe) where.fireSafetyCertified = true;
+    if (q.source) where.source = q.source;
+    // 注意 SQL 的 NULL:空房數未知(使用者刊登)的房源要保留
+    if (q.vacantOnly) where.AND = [{ OR: [{ vacancy: null }, { vacancy: { gt: 0 } }] }];
     if (q.subsidy) where.rentSubsidy = true;
     if (q.trash) where.hasTrashService = true;
     if (q.parking) where.hasIndoorParking = true;
@@ -81,6 +95,7 @@ router.get(
         id: true, title: true, address: true, lat: true, lng: true, price: true,
         rentSubsidy: true, hasTrashService: true, hasIndoorParking: true,
         listingType: true, availableFrom: true, availableTo: true,
+        priceMax: true, source: true, fireSafetyCertified: true, vacancy: true,
         images: { take: 1, orderBy: { id: 'asc' }, select: { url: true } },
       },
     });
@@ -88,7 +103,7 @@ router.get(
     // 批次計算平均星等,避免 N+1
     const stats = await prisma.review.groupBy({
       by: ['propertyId'],
-      where: { propertyId: { in: properties.map((p) => p.id) } },
+      where: { propertyId: { in: properties.map((p) => p.id) }, status: 'PUBLISHED' },
       _avg: { rating: true },
       _count: { _all: true },
     });
@@ -118,18 +133,20 @@ router.get(
       where: { id },
       include: {
         images: { orderBy: { id: 'asc' }, select: { id: true, url: true } },
-        reviews: { orderBy: { createdAt: 'desc' } },
+        reviews: { where: visibleReviewsWhere(req.user), orderBy: { createdAt: 'desc' } },
       },
     });
     if (!p) throw new HttpError(404, '找不到此房源');
 
-    const { reviews, ownerId, ...rest } = p;
-    const avg = reviews.length ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : null;
+    const { reviews, ownerId, externalId, hidden, ...rest } = p;
+    const published = reviews.filter((r) => r.status === 'PUBLISHED');
+    const avg = published.length ? published.reduce((s, r) => s + r.rating, 0) / published.length : null;
     res.json({
       ...rest,
       avgRating: avg ? Number(avg.toFixed(1)) : null,
-      reviewCount: reviews.length,
+      reviewCount: published.length,
       canEdit: !!req.user && (req.user.id === ownerId || req.user.role === 'ADMIN'),
+      myReviewId: reviews.find((r) => req.user && r.userId === req.user.id)?.id ?? null,
       reviews: reviews.map((r) => anonymizeReview(r, req.user)),
     });
   }),

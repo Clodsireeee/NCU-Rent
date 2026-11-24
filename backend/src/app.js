@@ -12,6 +12,8 @@ import authRouter from './routes/auth.js';
 import propertiesRouter from './routes/properties.js';
 import { garbageRouter, eateryRouter } from './routes/places.js';
 import { propertyReviewsRouter, reviewRouter } from './routes/reviews.js';
+import campusRouter from './routes/campus.js';
+import adminRouter from './routes/admin.js';
 
 const app = express();
 // 正式環境經過 Vercel + Render 兩層代理,TRUST_PROXY_HOPS 設 2,rate limit 才抓得到真實使用者 IP
@@ -23,7 +25,7 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-        'img-src': ["'self'", 'data:', 'https://tile.openstreetmap.org', 'https://res.cloudinary.com'],
+        'img-src': ["'self'", 'data:', 'https://tile.openstreetmap.org', 'https://res.cloudinary.com', 'https://house.nfu.edu.tw'],
       },
     },
   }),
@@ -42,6 +44,8 @@ app.use('/api/properties', propertiesRouter);
 app.use('/api/reviews', reviewRouter);
 app.use('/api/garbage-stops', garbageRouter);
 app.use('/api/eateries', eateryRouter);
+app.use('/api/campus', campusRouter);
+app.use('/api/admin', adminRouter);
 const dist = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../frontend/dist');
 app.use(express.static(dist));
 app.get('*', (req, res, next) =>

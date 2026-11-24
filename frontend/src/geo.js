@@ -20,3 +20,12 @@ export const TYPE_LABEL = { RENT: '一般租賃', SUBLET: '轉租', SHORT_TERM: 
 export const fmtTime = (d) => new Date(d).toLocaleString('zh-TW', { hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 export const isOld = (d) => Date.now() - new Date(d) > 2 * 365 * 864e5;
 export const DAYS = '日一二三四五六';
+
+export const SOURCE_LABEL = {
+  USER: '學生 / 房東刊登',
+  NCU_HOUSE: '中大校外賃居網',
+  NEARBY_SCHOOL: '鄰近學校校外賃居網',
+  FIRE_LIST: '中大軍訓室消防合格名單',
+};
+export const fmtPrice = (p) =>
+  p.price == null ? '洽詢' : p.priceMax ? `${p.price.toLocaleString()}~${p.priceMax.toLocaleString()}` : p.price.toLocaleString();

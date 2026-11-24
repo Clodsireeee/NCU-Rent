@@ -18,17 +18,38 @@ enum Role {
   ADMIN
 }
 
+/// 房源資料來源
+enum PropertySource {
+  USER          // 使用者自行刊登
+  NCU_HOUSE     // 中大校外賃居網(教育部雲端租屋網 house.nfu.edu.tw/NCU)
+  NEARBY_SCHOOL // 鄰近學校(中原、元智、健行…)雲端租屋網上、位於中大周邊的房源
+  FIRE_LIST     // 中大軍訓室「消防合格名單」
+}
+
+/// 評論審核狀態
+enum ReviewStatus {
+  PUBLISHED // 公開
+  PENDING   // 待人工審核(只有作者本人與管理員看得到)
+  REJECTED  // 管理員駁回(只有作者本人看得到,並附原因)
+}
+
+enum EaterySource {
+  USER   // 學生自行新增
+  GOOGLE // Google Places 同步(只存 place_id 與座標,名稱等資料即時向 Google 取得)
+}
+
 model User {
-  id         Int        @id @default(autoincrement())
-  googleId   String     @unique
-  email      String     @unique
-  name       String?
-  role       Role       @default(STUDENT)
-  createdAt  DateTime   @default(now())
-  properties Property[]
-  reviews    Review[]
-  eateries   Eatery[]
+  id            Int            @id @default(autoincrement())
+  googleId      String         @unique
+  email         String         @unique
+  name          String?
+  role          Role           @default(STUDENT)
+  createdAt     DateTime       @default(now())
+  properties    Property[]
+  reviews       Review[]
+  eateries      Eatery[]
   eateryReviews EateryReview[]
+  reports       ReviewReport[]
 }
 
 model Property {
@@ -37,7 +58,8 @@ model Property {
   address          String
   lat              Float
   lng              Float
-  price            Int
+  price            Int? // 消防合格名單等來源沒有租金資訊 → null
+  priceMax         Int? // 租金區間上限(雲端租屋網常見「5500~6500」)
   description      String?
   rentSubsidy      Boolean         @default(false) // 可申請租屋補貼
   hasTrashService  Boolean         @default(false) // 垃圾代收
@@ -45,6 +67,15 @@ model Property {
   listingType      ListingType     @default(RENT)
   availableFrom    DateTime?
   availableTo      DateTime?
+  // ---- 外部資料來源 ----
+  source           PropertySource  @default(USER)
+  sourceUrl        String? // 原始網頁,聯絡方式請學生至原網頁查看
+  externalId       String? // 來源網站上的編號,例如 "NCU/12345"
+  fireSafetyCertified Boolean      @default(false) // 出現在學校消防合格名單
+  hidden           Boolean         @default(false) // 消防名單佔位房源已被真實房源覆蓋時隱藏
+  vacancy          Int? // 空房數
+  extra            Json? // 其他來源欄位(房型、押金、設備…)
+  lastSyncedAt     DateTime?
   ownerId          Int
   owner            User            @relation(fields: [ownerId], references: [id])
   images           PropertyImage[]
@@ -52,8 +83,10 @@ model Property {
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
+  @@unique([source, externalId])
   @@index([lat, lng])
   @@index([price])
+  @@index([address])
 }
 
 model PropertyImage {
@@ -68,23 +101,28 @@ model PropertyImage {
 }
 
 model Review {
-  id         Int      @id @default(autoincrement())
-  rating     Int // 1~5
-  content    String
-  userId     Int
-  propertyId Int
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id               Int            @id @default(autoincrement())
+  rating           Int // 1~5
+  content          String
+  status           ReviewStatus   @default(PUBLISHED)
+  moderationReason String? // 被攔下/駁回的原因(給作者看)
+  moderationFlags  String[] // 觸發的類別,例如 ["insult","personal_info"]
+  userId           Int
+  propertyId       Int
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property         Property       @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  reports          ReviewReport[]
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 
   // 防重複評價:同一使用者對同一房源只能評一次
   @@unique([userId, propertyId])
   @@index([propertyId])
+  @@index([status])
 }
 
 model GarbageStop {
-  id          Int    @id @default(autoincrement())
+  id          Int     @id @default(autoincrement())
   name        String
   lat         Float
   lng         Float
@@ -94,31 +132,92 @@ model GarbageStop {
 }
 
 model Eatery {
-  id          Int            @id @default(autoincrement())
-  name        String
-  address     String?
-  lat         Float
-  lng         Float
-  category    String
-  priceRange  Int? // 平均每人花費
-  description String?
-  ownerId     Int
-  owner       User           @relation(fields: [ownerId], references: [id])
-  reviews     EateryReview[]
-  createdAt   DateTime       @default(now())
+  id            Int            @id @default(autoincrement())
+  name          String? // GOOGLE 來源依 Google 條款不得儲存店名 → null,前端即時查詢
+  address       String?
+  lat           Float
+  lng           Float
+  category      String
+  priceRange    Int? // 平均每人花費
+  description   String?
+  source        EaterySource   @default(USER)
+  googlePlaceId String?        @unique // 依 Google 條款可永久保存
+  syncedAt      DateTime? // 座標最多保存 30 天,同步腳本會清除過期資料
+  ownerId       Int
+  owner         User           @relation(fields: [ownerId], references: [id])
+  reviews       EateryReview[]
+  createdAt     DateTime       @default(now())
 
   @@index([lat, lng])
 }
 
 model EateryReview {
-  id        Int      @id @default(autoincrement())
-  rating    Int
-  content   String
-  userId    Int
-  eateryId  Int
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  eatery    Eatery   @relation(fields: [eateryId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
+  id               Int            @id @default(autoincrement())
+  rating           Int
+  content          String
+  status           ReviewStatus   @default(PUBLISHED)
+  moderationReason String?
+  moderationFlags  String[]
+  userId           Int
+  eateryId         Int
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eatery           Eatery         @relation(fields: [eateryId], references: [id], onDelete: Cascade)
+  reports          ReviewReport[]
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @default(now()) @updatedAt
 
   @@unique([userId, eateryId])
+  @@index([status])
+}
+
+/// 使用者檢舉評論(房源評論或店家評論擇一)
+model ReviewReport {
+  id             Int           @id @default(autoincrement())
+  reason         String
+  reporterId     Int
+  reporter       User          @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  reviewId       Int?
+  review         Review?       @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  eateryReviewId Int?
+  eateryReview   EateryReview? @relation(fields: [eateryReviewId], references: [id], onDelete: Cascade)
+  resolved       Boolean       @default(false)
+  createdAt      DateTime      @default(now())
+
+  @@unique([reporterId, reviewId])
+  @@unique([reporterId, eateryReviewId])
+}
+
+/// 校園最新消息(爬蟲 + AI 標籤)
+model CampusPost {
+  id          Int       @id @default(autoincrement())
+  source      String // 'ncu-events' | 'club-news' …(見 src/crawlers/news/sources.js)
+  url         String    @unique
+  title       String
+  publisher   String? // 公告單位,例如「學務處課外活動組」
+  rawCategory String? // 原網站分類,例如「活動」「演講」
+  publishedAt DateTime?
+  content     String? // 內文純文字(截斷),供 AI 分析與搜尋
+  summary     String? // AI 摘要(一兩句)
+  tags        String[] // 標籤,固定字彙見 src/services/tagger.js
+  taggedBy    String? // 'ai:<model>' 或 'rules'
+  eventStart  DateTime? // AI 從內文擷取的活動時間
+  eventEnd    DateTime?
+  location    String? // AI 擷取的活動地點
+  clubName    String? // 若為社團活動,社團名稱
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([publishedAt])
+  @@index([tags], type: Gin)
+}
+
+/// 社團名錄(課外組社團總覽)
+model Club {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  nature    String? // 學術性 / 康樂性 / 聯誼性 / 服務性 / 系學會 …
+  intro     String?
+  url       String
+  links     String[] // IG / FB 等
+  syncedAt  DateTime @default(now())
 }
