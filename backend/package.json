@@ -10,7 +10,14 @@
     "db:studio": "prisma studio",
     "postinstall": "prisma generate",
     "seed": "node scripts/seed.js",
-    "smoke": "node scripts/smoke-test.js"
+    "smoke": "node scripts/smoke-test.js",
+    "test": "node --test \"test/*.test.js\"",
+    "sync:houses": "node scripts/sync-houses.js",
+    "import:fire": "node scripts/import-fire-list.js",
+    "sync:eateries": "node scripts/sync-eateries.js",
+    "sync:news": "node scripts/sync-news.js",
+    "sync:clubs": "node scripts/sync-clubs.js",
+    "sync:all": "node scripts/sync-news.js && node scripts/sync-clubs.js && node scripts/sync-houses.js && node scripts/sync-eateries.js"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
@@ -27,5 +34,8 @@
     "passport-google-oauth20": "^2.0.0",
     "zod": "^3.23.8",
     "prisma": "^5.22.0"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
