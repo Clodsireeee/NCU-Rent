@@ -31,6 +31,19 @@ await t('校園標籤清單', async () => { const r = await call('/api/campus/ta
 await t('校園消息依標籤篩選', async () => { const r = await call('/api/campus/posts?tags=社團活動,講座演講&match=any'); eq(r.status, 200, 'status'); if (!Array.isArray((await r.json()).items)) throw new Error('沒有 items'); });
 await t('即將舉辦活動', async () => eq((await call('/api/campus/posts?upcoming=true')).status, 200, 'status'));
 await t('社團名錄', async () => eq((await call('/api/campus/clubs')).status, 200, 'status'));
+await t('AI 狀態', async () => { const r = await call('/api/ai/status'); eq(r.status, 200, 'status'); console.log(`    AI ${(await r.json()).enabled ? '已啟用' : '未啟用'}`); });
+await t('MCP initialize', async () => {
+  const r = await fetch(`${BASE}/mcp`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'smoke', version: '1' } } }) });
+  eq(r.status, 200, 'status');
+  if ((await r.json()).result?.serverInfo?.name !== 'ncu-rent') throw new Error('serverInfo 不對');
+});
+await t('MCP tools/list 有 7 個工具', async () => {
+  const r = await fetch(`${BASE}/mcp`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', 'MCP-Protocol-Version': '2025-11-25' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }) });
+  const n = (await r.json()).result?.tools?.length;
+  if (n !== 7) throw new Error(`工具數量 ${n}`);
+});
 await t('未登入進審核後台回 401', async () => eq((await call('/api/admin/moderation', { token: false })).status, 401, 'status'));
 
 if (!TOKEN) {

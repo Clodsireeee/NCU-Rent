@@ -65,3 +65,25 @@ export async function geocode(address) {
   memo.set(address, result);
   return result;
 }
+
+/**
+ * 地標名稱 → 座標(例如「中壢火車站」「工程五館」)。依序嘗試:原文、加上「中壢」、加上「桃園市」。
+ * 回傳 { lat, lng, label } 或 null。
+ */
+export async function geocodePlace(name) {
+  const q = String(name || '').trim();
+  if (!q) return null;
+  const key = `place:${q}`;
+  if (memo.has(key)) return memo.get(key);
+  let hit = null;
+  for (const query of [q, `${q} 中壢`, `桃園市${q}`]) {
+    try {
+      hit = (process.env.GEOCODER || 'nominatim') === 'google' ? await google(query) : await nominatim(query);
+    } catch { hit = null; }
+    if (inTW(hit)) break;
+    hit = null;
+  }
+  const out = hit ? { lat: hit.lat, lng: hit.lng, label: q } : null;
+  memo.set(key, out);
+  return out;
+}

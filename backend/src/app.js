@@ -14,6 +14,8 @@ import { garbageRouter, eateryRouter } from './routes/places.js';
 import { propertyReviewsRouter, reviewRouter } from './routes/reviews.js';
 import campusRouter from './routes/campus.js';
 import adminRouter from './routes/admin.js';
+import aiRouter from './routes/ai.js';
+import mcpRouter, { originAllowed } from './routes/mcp.js';
 
 const app = express();
 // 正式環境經過 Vercel + Render 兩層代理,TRUST_PROXY_HOPS 設 2,rate limit 才抓得到真實使用者 IP
@@ -29,6 +31,17 @@ app.use(
       },
     },
   }),
+);
+// MCP 伺服器:給外部 AI 助理連線(唯讀、不需登入),CORS 規則與網站其他部分分開
+app.use(
+  '/mcp',
+  cors({
+    origin: (origin, cb) => cb(null, originAllowed(origin)),
+    allowedHeaders: ['Content-Type', 'Accept', 'MCP-Protocol-Version', 'Mcp-Method', 'Mcp-Name', 'Mcp-Session-Id', 'Authorization'],
+    exposedHeaders: ['MCP-Protocol-Version'],
+  }),
+  express.json({ limit: '100kb' }),
+  mcpRouter,
 );
 app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
 app.use(express.json({ limit: '100kb' }));
@@ -46,6 +59,7 @@ app.use('/api/garbage-stops', garbageRouter);
 app.use('/api/eateries', eateryRouter);
 app.use('/api/campus', campusRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/ai', aiRouter);
 const dist = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../frontend/dist');
 app.use(express.static(dist));
 app.get('*', (req, res, next) =>

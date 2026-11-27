@@ -76,3 +76,70 @@ export function parseJsonLoose(text) {
   }
   return null;
 }
+
+/**
+ * 直接呼叫 Claude Messages API(支援工具呼叫)。只支援 AI_PROVIDER=anthropic。
+ * 回傳 API 原始回應;失敗時丟出錯誤(由呼叫端決定怎麼告訴使用者)。
+ */
+export async function claudeMessages({ system, messages, tools, toolChoice, model, maxTokens = 1500, timeout = 60000 }) {
+  if (provider() !== 'anthropic' || !process.env.AI_API_KEY) {
+    throw Object.assign(new Error('AI 功能需要設定 AI_PROVIDER=anthropic 與 AI_API_KEY'), { status: 503 });
+  }
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': process.env.AI_API_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: model || aiModel(),
+      max_tokens: maxTokens,
+      system,
+      messages,
+      ...(tools?.length ? { tools } : {}),
+      ...(toolChoice ? { tool_choice: toolChoice } : {}),
+    }),
+    signal: AbortSignal.timeout(timeout),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    throw Object.assign(new Error(`Claude API ${r.status}: ${data.error?.message || r.statusText}`), { status: r.status === 429 ? 429 : 502 });
+  }
+  return data;
+}
+
+/**
+ * 要求 AI 回傳「符合指定格式」的資料。
+ * Anthropic:用強制工具呼叫(tool_choice),API 保證回傳的是已解析好的物件,
+ *           不會因為中文內容裡的引號、換行而解析失敗。
+ * 其他服務:退回一般文字回覆 + 盡量解析 JSON。
+ * 失敗回傳 null(呼叫端會改用規則版)。
+ */
+export async function completeJson({ system, prompt, schema, name = 'submit_result', maxTokens = 600, timeout = 30000 }) {
+  if (!aiEnabled()) return null;
+  if (provider() !== 'anthropic') {
+    const out = parseJsonLoose(await complete({ system, prompt, maxTokens, timeout }));
+    if (!out) console.warn('[llm] AI 回覆無法解析成 JSON');
+    return out;
+  }
+  try {
+    const res = await claudeMessages({
+      system,
+      messages: [{ role: 'user', content: prompt }],
+      tools: [{ name, description: '回傳結果(必須呼叫此工具)', input_schema: schema }],
+      toolChoice: { type: 'tool', name },
+      maxTokens,
+      timeout,
+    });
+    const use = (res.content || []).find((b) => b.type === 'tool_use' && b.name === name);
+    if (!use) {
+      console.warn(`[llm] AI 沒有回傳結構化結果(stop_reason=${res.stop_reason})`);
+      return null;
+    }
+    return use.input;
+  } catch (e) {
+    console.warn('[llm] 呼叫失敗,改用規則版:', e.message);
+    return null;
+  }
+}

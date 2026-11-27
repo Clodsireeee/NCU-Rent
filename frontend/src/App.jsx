@@ -5,6 +5,7 @@ import EateryPanel from './EateryPanel.jsx';
 import Terms from './Terms.jsx';
 import Campus from './Campus.jsx';
 import Admin from './Admin.jsx';
+import Assistant from './Assistant.jsx';
 import { api, loginUrl } from './api.js';
 import { TYPE_LABEL, DAYS } from './geo.js';
 
@@ -31,12 +32,15 @@ export default function App() {
   useEffect(() => {
     api('/auth/me').then(setUser).catch(() => setUser(null));
     api('/api/garbage-stops').then(setGarbage).catch(() => {});
+    // 分享連結 /?property=12 → 直接打開該房源(AI 助理、MCP 回傳的連結都是這種格式)
+    const pid = Number(new URLSearchParams(location.search).get('property'));
+    if (pid > 0) { setTab('rent'); setSel(pid); history.replaceState({}, '', '/'); }
     const err = new URLSearchParams(location.search).get('error');
     if (err) { setBanner(err === 'DOMAIN_NOT_ALLOWED' ? '只有 @g.ncu.edu.tw 信箱可以登入' : '登入失敗,請再試一次'); history.replaceState({}, '', '/'); }
   }, []);
 
   useEffect(() => {
-    if (!bbox || tab === 'campus') return;
+    if (!bbox || tab === 'campus' || tab === 'ai') return;
     const q = new URLSearchParams({ bbox });
     if (tab === 'rent') {
       ['subsidy', 'trash', 'parking', 'fireSafe', 'vacantOnly'].forEach((k) => f[k] && q.set(k, 'true'));
@@ -70,9 +74,10 @@ export default function App() {
           <button className={tab === 'rent' ? 'on' : ''} onClick={() => switchTab('rent')}>租屋</button>
           <button className={tab === 'food' ? 'on' : ''} onClick={() => switchTab('food')}>美食</button>
           <button className={tab === 'campus' ? 'on' : ''} onClick={() => switchTab('campus')}>校園資訊</button>
+          <button className={tab === 'ai' ? 'on' : ''} onClick={() => switchTab('ai')}>AI 助理</button>
         </nav>
         <div className="filters">
-          {tab === 'campus' ? null : tab === 'rent' ? (
+          {tab === 'campus' || tab === 'ai' ? null : tab === 'rent' ? (
             <>
               <label><input type="checkbox" checked={f.subsidy} onChange={() => set('subsidy', !f.subsidy)} />可租補</label>
               <label><input type="checkbox" checked={f.fireSafe} onChange={() => set('fireSafe', !f.fireSafe)} />🧯消防合格</label>
@@ -94,7 +99,7 @@ export default function App() {
               {CATS.map((c) => <option key={c}>{c}</option>)}
             </select>
           )}
-          {tab !== 'campus' && <>
+          {tab !== 'campus' && tab !== 'ai' && <>
             <label><input type="checkbox" checked={showGarbage} onChange={() => setShowGarbage(!showGarbage)} />🚛 垃圾車</label>
             <small>{count} 間</small>
           </>}
@@ -107,11 +112,12 @@ export default function App() {
       {banner && <div className="banner" onClick={() => setBanner('')}>{banner}</div>}
       <main>
         {/* 地圖保持掛載,切回租屋/美食時不用重新載入 */}
-        <div className="map-wrap" style={{ display: tab === 'campus' ? 'none' : 'flex' }}>
-          <MapView markers={markers} onBounds={setBbox} visible={tab !== 'campus'} />
+        <div className="map-wrap" style={{ display: tab === 'campus' || tab === 'ai' ? 'none' : 'flex' }}>
+          <MapView markers={markers} onBounds={setBbox} visible={tab !== 'campus' && tab !== 'ai'} />
           {sel && (tab === 'rent' ? <DetailPanel id={sel} user={user} onClose={() => setSel(null)} /> : <EateryPanel id={sel} user={user} onClose={() => setSel(null)} />)}
         </div>
         {tab === 'campus' && <Campus />}
+        {tab === 'ai' && <Assistant user={user} onOpenProperty={(id) => { setTab('rent'); setSel(id); }} />}
       </main>
       <footer><button className="link" onClick={() => setTerms(true)}>使用條款與免責聲明</button> · 平台僅供中大學生資訊交流</footer>
       {terms && <Terms onClose={() => setTerms(false)} />}
