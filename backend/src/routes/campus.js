@@ -5,6 +5,7 @@ import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../lib/http.js';
 import { TAGS, TAG_NAMES } from '../services/tagger.js';
 import { SOURCES } from '../crawlers/news/sources.js';
+import { excerpt, splitAttachments, countAttachments } from '../lib/campusText.js';
 
 const router = Router();
 
@@ -67,27 +68,18 @@ router.get('/posts', asyncHandler(async (req, res) => {
       ...p,
       excerpt: excerpt(content),
       hasContent: !!content?.trim(),
-      attachmentCount: (content?.match(/^• .+｜https?:\/\//gm) || []).length,
+      attachmentCount: countAttachments(content),
     })),
   });
 }));
-
-/** 內文開頭:去掉和標題重複的行、附件清單,取前 150 字 */
-function excerpt(content) {
-  if (!content) return null;
-  const body = content.split('\n附件:')[0].replace(/\s+/g, ' ').trim();
-  return body.length > 150 ? `${body.slice(0, 150)}…` : body || null;
-}
 
 /** GET /api/campus/posts/:id 單則公告(含完整原始內文與附件) */
 router.get('/posts/:id', asyncHandler(async (req, res) => {
   const id = z.coerce.number().int().positive().parse(req.params.id);
   const post = await prisma.campusPost.findUnique({ where: { id } });
   if (!post) return res.status(404).json({ error: '找不到此公告' });
-  const [body, list = ''] = (post.content || '').split('\n附件:\n');
-  const attachments = list.split('\n').map((l) => l.match(/^• (.+)｜(https?:\/\/\S+)$/)).filter(Boolean)
-    .map((m) => ({ name: m[1], url: m[2] }));
-  res.json({ ...post, content: body.trim(), attachments });
+  const { body, attachments } = splitAttachments(post.content);
+  res.json({ ...post, content: body, attachments });
 }));
 
 /** GET /api/campus/clubs?q=&nature= */

@@ -51,6 +51,24 @@ Google Cloud Console 的「已授權重新導向 URI」需加入 `GOOGLE_CALLBAC
 - 沒有 AI 金鑰時用關鍵字規則貼標;之後補上金鑰可執行 `node scripts/sync-news.js --retag`
 - 社團的 IG / FB 貼文沒有抓(違反 Meta 條款),社團名錄會附上社團的 IG / FB 連結
 
+### 5. 生成式 AI(需要 Claude API 金鑰)
+在 `.env` 設定 `AI_API_KEY` 後執行 `npm run ai:check`,會實際測試金鑰與各項 AI 功能。
+
+| 功能 | 位置 | 說明 |
+|---|---|---|
+| 評論審核 | `src/services/moderation.js` | 規則先擋明顯的髒話,AI 再判斷語意(拐彎罵人、人身攻擊) |
+| 校園消息標籤、摘要、活動時間地點 | `src/services/tagger.js` | 新公告自動處理;舊公告用 `node scripts/sync-news.js --retag` 重新處理 |
+| 租屋代理人 | `src/services/agent.js`、`POST /api/ai/agent` | Claude 透過工具呼叫(tool use)自己查房源、評論、通勤、校園消息,最多 `AGENT_MAX_STEPS` 輪 |
+| 新生入學包 | `src/services/freshman.js`、`POST /api/ai/freshman` | 依身分/住宿/興趣整理指南;時程日期只能來自真實公告,並附來源 |
+| MCP 伺服器 | `src/routes/mcp.js`、`POST /mcp` | 讓 Claude 等 AI 助理直接查 NCU-Rent;支援 MCP 2026-07-28 與 2025-11-25 以前的版本 |
+
+代理人與 MCP 共用 `src/services/rentTools.js` 的 7 個唯讀工具:`search_properties`、`get_property`、`estimate_commute`、`search_campus_news`、`get_campus_news`、`list_news_tags`、`search_clubs`。
+
+費用控制:`AGENT_HOURLY_LIMIT`(登入者每小時)、`AGENT_GUEST_HOURLY_LIMIT`(訪客每小時,設 0 = 必須登入)、`AGENT_DAILY_LIMIT`(全站每天)。建議另外在 Anthropic Console 設定每月花費上限。
+
+在 Claude 連接 MCP:Claude 設定 → 連接器(Connectors)→ 新增自訂連接器 → 網址填 `https://你的網站/mcp`。
+用官方工具測試:`npx @modelcontextprotocol/inspector`,Transport 選 Streamable HTTP,網址填 `http://localhost:4000/mcp`。
+
 ## API 一覽
 | Method | Path | 權限 | 說明 |
 |---|---|---|---|
@@ -81,6 +99,10 @@ Google Cloud Console 的「已授權重新導向 URI」需加入 `GOOGLE_CALLBAC
 | GET | /api/admin/moderation | 管理員 | `?status=PENDING&reported=true` 審核佇列 |
 | POST | /api/admin/moderation/:kind/:id | 管理員 | `{action: approve\|reject\|delete, reason}`,kind = review / eateryReview |
 | GET | /api/admin/stats | 管理員 | 待審數、檢舉數、各來源房源數 |
+| GET | /api/ai/status | 公開 | AI 功能是否啟用 |
+| POST | /api/ai/agent | 公開(有次數限制) | `{messages:[{role,content}]}` → `{reply, steps, propertyIds, usage}` |
+| POST | /api/ai/freshman | 公開(有次數限制) | `{identity, housing, interests[], lang}` → 入學指南 |
+| POST | /mcp | 公開(唯讀) | MCP 伺服器(JSON-RPC) |
 
 ## 前端串接注意
 - fetch / axios 需帶 `credentials: 'include'`。

@@ -17,7 +17,8 @@
     "sync:eateries": "node scripts/sync-eateries.js",
     "sync:news": "node scripts/sync-news.js",
     "sync:clubs": "node scripts/sync-clubs.js",
-    "sync:all": "node scripts/sync-news.js && node scripts/sync-clubs.js && node scripts/sync-houses.js && node scripts/sync-eateries.js"
+    "sync:all": "node scripts/sync-news.js && node scripts/sync-clubs.js && node scripts/sync-houses.js && node scripts/sync-eateries.js",
+    "ai:check": "node scripts/ai-check.js"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

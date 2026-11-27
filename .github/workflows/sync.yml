@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       job:
-        description: 'news / houses / eateries / clubs / all'
+        description: 'news / houses / eateries / clubs / all / retag(用 AI 重新處理近 60 天的公告)'
         default: 'news'
 
 jobs:
@@ -45,3 +45,6 @@ jobs:
       - name: 美食(每週,Google 座標最多保存 30 天)
         if: (github.event.schedule == '43 19 * * 0' || inputs.job == 'eateries' || inputs.job == 'all') && env.GOOGLE_MAPS_API_KEY != ''
         run: npm run sync:eateries
+      - name: 用 AI 重新處理既有公告(手動執行 retag 時)
+        if: inputs.job == 'retag' && env.AI_API_KEY != ''
+        run: node scripts/sync-news.js --retag
